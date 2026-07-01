@@ -54,6 +54,9 @@ header h1{font-size:16px;font-weight:700;color:white;flex:1;}
 .info-row{margin-top:11px;padding:10px 13px;background:var(--bg);border:1px solid var(--border);border-radius:10px;display:flex;justify-content:space-between;align-items:center;}
 .info-lbl{font-size:12px;color:var(--muted);}
 .info-val{font-size:14px;font-weight:700;}
+.cita-row{margin-top:8px;padding:10px 13px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.25);border-radius:10px;display:flex;justify-content:space-between;align-items:center;}
+.cita-lbl{font-size:12px;color:var(--accent);}
+.cita-val{font-size:13px;font-weight:700;color:var(--accent);}
 .btn-maint{margin-top:11px;width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:13px;font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer;-webkit-appearance:none;min-height:48px;}
 .btn-maint:active{background:var(--border);}
 .hist-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
@@ -125,18 +128,170 @@ function lsSet(k,v){try{localStorage.setItem(k,v);}catch(e){}}
 function lsDel(k){try{localStorage.removeItem(k);}catch(e){}}
 function fmt(n){return Math.abs(Math.round(n)).toLocaleString('es-ES');}
 function setSaveBar(t){const e=document.getElementById('save-bar');if(e)e.textContent=t;}
-function loadData(){const raw=lsGet(LS_KEY);if(raw){D=JSON.parse(raw);const ids=D.piezas.map(p=>p.id);SEED.piezas.forEach(sp=>{if(!ids.includes(sp.id))D.piezas.push(sp);});if(!D.itvProxima)D.itvProxima='2026-11-26';}else{D=JSON.parse(JSON.stringify(SEED));lsSet(LS_KEY,JSON.stringify(D));}render();}
+
+function calcFechaEstimada(kmRestantes){
+  if(!D||!D.history||D.history.length<2)return null;
+  const h=D.history;
+  const diasTotal=(h[0].ts-h[h.length-1].ts)/(1000*60*60*24);
+  const kmTotal=h[0].km-h[h.length-1].km;
+  if(diasTotal<=0||kmTotal<=0)return null;
+  const kmPorDia=kmTotal/diasTotal;
+  const diasRestantes=kmRestantes/kmPorDia;
+  const fecha=new Date(h[0].ts+diasRestantes*1000*60*60*24);
+  return fecha;
+}
+
+function fmtFecha(d){
+  if(!d)return null;
+  return d.toLocaleDateString('es-ES',{day:'numeric',month:'short',year:'numeric'});
+}
+
+function loadData(){
+  const raw=lsGet(LS_KEY);
+  if(raw){
+    D=JSON.parse(raw);
+    const ids=D.piezas.map(p=>p.id);
+    SEED.piezas.forEach(sp=>{if(!ids.includes(sp.id))D.piezas.push(sp);});
+    if(!D.itvProxima)D.itvProxima='2026-11-26';
+  }else{
+    D=JSON.parse(JSON.stringify(SEED));
+    lsSet(LS_KEY,JSON.stringify(D));
+  }
+  render();
+}
+
 function saveData(){lsSet(LS_KEY,JSON.stringify(D));setSaveBar('✓ Guardado');setTimeout(()=>setSaveBar(''),1800);}
-function updateKm(){const input=document.getElementById('km-input');const val=parseInt(input.value);if(!val||val<1000){showToast('⚠ Introduce un km válido');return;}if(D.currentKm&&val<D.currentKm){showToast('⚠ El km no puede ser menor al anterior');return;}const now=new Date();const fecha=now.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});D.history.unshift({km:val,fecha,ts:now.getTime(),nota:''});D.currentKm=val;D.lastUpdate=fecha;input.value='';saveData();showToast('✓ '+fmt(val)+' km registrados');render();}
-function marcarRealizado(id){const p=D.piezas.find(x=>x.id===id);if(!p||!D.currentKm)return;const km=D.currentKm;p.ultimoKm=km;const top=D.history[0];if(top&&top.km===km){top.nota=top.nota?top.nota+' · '+p.nombre:p.nombre;}else{const now=new Date();const fecha=now.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});D.history.unshift({km,fecha,ts:now.getTime(),nota:p.nombre});}saveData();showToast('✓ '+p.nombre+' registrado a '+fmt(km)+' km');render();}
-function renovarItv(){const d=new Date(D.itvProxima);d.setFullYear(d.getFullYear()+1);D.itvProxima=d.toISOString().slice(0,10);saveData();showToast('✓ ITV renovada');renderItv();}
-function confirmReset(){if(confirm('¿Borrar todos los datos?')){lsDel(LS_KEY);D=JSON.parse(JSON.stringify(SEED));lsSet(LS_KEY,JSON.stringify(D));render();showToast('Datos reiniciados');}}
-function getStatus(p,km){if(!km)return{estado:'Sin datos',bCls:'badge-ok',fCls:'fill-ok',vCls:'',rest:null,pct:0};const proxKm=p.ultimoKm+p.intervalo,rest=proxKm-km,pct=Math.min(((km-p.ultimoKm)/p.intervalo)*100,100);let estado,bCls,fCls,vCls;if(rest<=0){estado='¡VENCIDO!';bCls='badge-danger';fCls='fill-danger';vCls='c-danger';}else if(rest<=WARN_KM){estado='Agendar';bCls='badge-warn';fCls='fill-warn';vCls='c-warn';}else if(rest<=15000){estado='Próximo';bCls='badge-next';fCls='fill-next';vCls='c-next';}else{estado='OK';bCls='badge-ok';fCls='fill-ok';vCls='c-ok';}return{estado,bCls,fCls,vCls,rest,pct,proxKm};}
-function render(){const km=D.currentKm;document.getElementById('hdr-km').textContent=km?fmt(km)+' km':'— km';document.getElementById('update-info').textContent=D.lastUpdate?'Última actualización: '+D.lastUpdate:'Sin datos aún';renderAlerts(km);renderMaint(km);renderItv();renderHist();}
-function renderAlerts(km){const de=document.getElementById('alert-danger'),we=document.getElementById('alert-warn');de.className='alert';we.className='alert';if(!km)return;const venc=D.piezas.filter(p=>(p.ultimoKm+p.intervalo)-km<=0),prox=D.piezas.filter(p=>{const r=(p.ultimoKm+p.intervalo)-km;return r>0&&r<=WARN_KM;});if(venc.length){de.className='alert show-danger';de.innerHTML='🔴 Vencido: '+venc.map(p=>p.nombre).join(', ');}if(prox.length){we.className='alert show-warn';we.innerHTML='🟡 Menos de '+fmt(WARN_KM)+' km: '+prox.map(p=>p.nombre).join(', ');}}
-function renderMaint(km){document.getElementById('maint-cards').innerHTML=D.piezas.map(p=>{const s=getStatus(p,km);const btn=km?`<button class="btn-maint" onclick="marcarRealizado('${p.id}')">✓ Marcar realizado a ${fmt(km)} km</button>`:'';return `<div class="maint-card"><div class="maint-head"><div><div class="maint-name">${p.emoji} ${p.nombre}</div><div class="maint-desc">${p.desc}</div></div><span class="badge ${s.bCls}">${s.estado}</span></div><div class="maint-body"><div class="progress-wrap"><div class="progress-fill ${s.fCls}" style="width:${s.pct}%"></div></div><div class="stats-grid"><div class="stat"><span class="stat-val ${s.vCls}">${km&&s.proxKm?fmt(s.proxKm)+' km':'—'}</span><span class="stat-lbl">Próximo a</span></div><div class="stat"><span class="stat-val ${s.vCls}">${s.rest!==null?(s.rest>0?fmt(s.rest)+' km':'¡Ya!'):'—'}</span><span class="stat-lbl">Km restantes</span></div><div class="stat"><span class="stat-val">${fmt(p.intervalo)} km</span><span class="stat-lbl">Intervalo</span></div></div><div class="info-row"><span class="info-lbl">Último cambio</span><span class="info-val">${fmt(p.ultimoKm)} km</span></div>${btn}</div></div>`;}).join('');}
-function renderItv(){const hoy=new Date(),proxima=new Date(D.itvProxima),dias=Math.ceil((proxima-hoy)/86400000),pct=Math.max(0,Math.min(100,((365-dias)/365)*100));let estado,bCls,fCls,vCls,extra='';if(dias<=0){estado='¡Vencida!';bCls='badge-danger';fCls='fill-danger';vCls='c-danger';extra=`<button class="btn-maint" onclick="renovarItv()">✓ Marcar ITV renovada (+1 año)</button>`;}else if(dias<=WARN_ITV_DIAS){estado='Pedir cita';bCls='badge-warn';fCls='fill-warn';vCls='c-warn';}else{estado='OK';bCls='badge-ok';fCls='fill-ok';vCls='c-ok';}document.getElementById('itv-card').innerHTML=`<div class="maint-card"><div class="maint-head"><div><div class="maint-name">📋 ITV</div><div class="maint-desc">Inspección técnica anual · Taxi</div></div><span class="badge ${bCls}">${estado}</span></div><div class="maint-body"><div class="progress-wrap"><div class="progress-fill ${fCls}" style="width:${pct}%"></div></div><div class="stats-grid"><div class="stat"><span class="stat-val ${vCls}">${proxima.toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'})}</span><span class="stat-lbl">Fecha límite</span></div><div class="stat"><span class="stat-val ${vCls}">${dias>0?dias:'¡Ya!'}</span><span class="stat-lbl">Días restantes</span></div><div class="stat"><span class="stat-val">Anual</span><span class="stat-lbl">Intervalo</span></div></div>${extra}</div></div>`;}
-function renderHist(){const h=D.history||[],el=document.getElementById('hist-list');if(!h.length){el.innerHTML='<div class="muted-txt">Sin registros todavía.</div>';return;}el.innerHTML=h.slice(0,10).map((e,i)=>{const prev=h[i+1],diff=prev?e.km-prev.km:null;return `<div class="hist-item"><div><div class="hist-km">${fmt(e.km)} km</div><div class="hist-date">${e.fecha}</div></div><div><div class="hist-diff">${diff!==null?'+'+fmt(diff)+' km':'primer reg.'}</div>${e.nota?`<div class="hist-nota">${e.nota}</div>`:''}</div></div>`;}).join('');}
+
+function updateKm(){
+  const input=document.getElementById('km-input');
+  const val=parseInt(input.value);
+  if(!val||val<1000){showToast('⚠ Introduce un km válido');return;}
+  if(D.currentKm&&val<D.currentKm){showToast('⚠ El km no puede ser menor al anterior');return;}
+  const now=new Date();
+  const fecha=now.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
+  D.history.unshift({km:val,fecha,ts:now.getTime(),nota:''});
+  D.currentKm=val;D.lastUpdate=fecha;
+  input.value='';saveData();
+  showToast('✓ '+fmt(val)+' km registrados');render();
+}
+
+function marcarRealizado(id){
+  const p=D.piezas.find(x=>x.id===id);
+  if(!p||!D.currentKm)return;
+  const km=D.currentKm;
+  p.ultimoKm=km;
+  const top=D.history[0];
+  if(top&&top.km===km){top.nota=top.nota?top.nota+' · '+p.nombre:p.nombre;}
+  else{const now=new Date();const fecha=now.toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});D.history.unshift({km,fecha,ts:now.getTime(),nota:p.nombre});}
+  saveData();showToast('✓ '+p.nombre+' registrado a '+fmt(km)+' km');render();
+}
+
+function renovarItv(){
+  const d=new Date(D.itvProxima);d.setFullYear(d.getFullYear()+1);
+  D.itvProxima=d.toISOString().slice(0,10);
+  saveData();showToast('✓ ITV renovada');renderItv();
+}
+
+function confirmReset(){
+  if(confirm('¿Borrar todos los datos?')){
+    lsDel(LS_KEY);D=JSON.parse(JSON.stringify(SEED));
+    lsSet(LS_KEY,JSON.stringify(D));render();showToast('Datos reiniciados');
+  }
+}
+
+function getStatus(p,km){
+  if(!km)return{estado:'Sin datos',bCls:'badge-ok',fCls:'fill-ok',vCls:'',rest:null,pct:0,proxKm:null};
+  const proxKm=p.ultimoKm+p.intervalo,rest=proxKm-km;
+  const pct=Math.min(((km-p.ultimoKm)/p.intervalo)*100,100);
+  let estado,bCls,fCls,vCls;
+  if(rest<=0){estado='¡VENCIDO!';bCls='badge-danger';fCls='fill-danger';vCls='c-danger';}
+  else if(rest<=WARN_KM){estado='Agendar';bCls='badge-warn';fCls='fill-warn';vCls='c-warn';}
+  else if(rest<=15000){estado='Próximo';bCls='badge-next';fCls='fill-next';vCls='c-next';}
+  else{estado='OK';bCls='badge-ok';fCls='fill-ok';vCls='c-ok';}
+  return{estado,bCls,fCls,vCls,rest,pct,proxKm};
+}
+
+function render(){
+  const km=D.currentKm;
+  document.getElementById('hdr-km').textContent=km?fmt(km)+' km':'— km';
+  document.getElementById('update-info').textContent=D.lastUpdate?'Última actualización: '+D.lastUpdate:'Sin datos aún';
+  renderAlerts(km);renderMaint(km);renderItv();renderHist();
+}
+
+function renderAlerts(km){
+  const de=document.getElementById('alert-danger'),we=document.getElementById('alert-warn');
+  de.className='alert';we.className='alert';
+  if(!km)return;
+  const venc=D.piezas.filter(p=>(p.ultimoKm+p.intervalo)-km<=0);
+  const prox=D.piezas.filter(p=>{const r=(p.ultimoKm+p.intervalo)-km;return r>0&&r<=WARN_KM;});
+  if(venc.length){de.className='alert show-danger';de.innerHTML='🔴 Vencido: '+venc.map(p=>p.nombre).join(', ');}
+  if(prox.length){we.className='alert show-warn';we.innerHTML='🟡 Menos de '+fmt(WARN_KM)+' km: '+prox.map(p=>p.nombre).join(', ');}
+}
+
+function renderMaint(km){
+  document.getElementById('maint-cards').innerHTML=D.piezas.map(p=>{
+    const s=getStatus(p,km);
+    const fechaEst=s.rest>0?calcFechaEstimada(s.rest):null;
+    const citaHtml=fechaEst?`<div class="cita-row"><span class="cita-lbl">📅 Pide cita antes del</span><span class="cita-val">${fmtFecha(fechaEst)}</span></div>`:'';
+    const btn=km?`<button class="btn-maint" onclick="marcarRealizado('${p.id}')">✓ Marcar realizado a ${fmt(km)} km</button>`:'';
+    return `<div class="maint-card">
+      <div class="maint-head">
+        <div><div class="maint-name">${p.emoji} ${p.nombre}</div><div class="maint-desc">${p.desc}</div></div>
+        <span class="badge ${s.bCls}">${s.estado}</span>
+      </div>
+      <div class="maint-body">
+        <div class="progress-wrap"><div class="progress-fill ${s.fCls}" style="width:${s.pct}%"></div></div>
+        <div class="stats-grid">
+          <div class="stat"><span class="stat-val ${s.vCls}">${km&&s.proxKm?fmt(s.proxKm)+' km':'—'}</span><span class="stat-lbl">Próximo a</span></div>
+          <div class="stat"><span class="stat-val ${s.vCls}">${s.rest!==null?(s.rest>0?fmt(s.rest)+' km':'¡Ya!'):'—'}</span><span class="stat-lbl">Km restantes</span></div>
+          <div class="stat"><span class="stat-val">${fmt(p.intervalo)} km</span><span class="stat-lbl">Intervalo</span></div>
+        </div>
+        <div class="info-row"><span class="info-lbl">Último cambio</span><span class="info-val">${fmt(p.ultimoKm)} km</span></div>
+        ${citaHtml}
+        ${btn}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderItv(){
+  const hoy=new Date(),proxima=new Date(D.itvProxima);
+  const dias=Math.ceil((proxima-hoy)/86400000);
+  const pct=Math.max(0,Math.min(100,((365-dias)/365)*100));
+  let estado,bCls,fCls,vCls,extra='';
+  if(dias<=0){estado='¡Vencida!';bCls='badge-danger';fCls='fill-danger';vCls='c-danger';extra=`<button class="btn-maint" onclick="renovarItv()">✓ Marcar ITV renovada (+1 año)</button>`;}
+  else if(dias<=WARN_ITV_DIAS){estado='Pedir cita';bCls='badge-warn';fCls='fill-warn';vCls='c-warn';}
+  else{estado='OK';bCls='badge-ok';fCls='fill-ok';vCls='c-ok';}
+  const fechaItv=calcFechaEstimada(dias);
+  document.getElementById('itv-card').innerHTML=`<div class="maint-card">
+    <div class="maint-head">
+      <div><div class="maint-name">📋 ITV</div><div class="maint-desc">Inspección técnica anual · Taxi</div></div>
+      <span class="badge ${bCls}">${estado}</span>
+    </div>
+    <div class="maint-body">
+      <div class="progress-wrap"><div class="progress-fill ${fCls}" style="width:${pct}%"></div></div>
+      <div class="stats-grid">
+        <div class="stat"><span class="stat-val ${vCls}">${proxima.toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'})}</span><span class="stat-lbl">Fecha límite</span></div>
+        <div class="stat"><span class="stat-val ${vCls}">${dias>0?dias:'¡Ya!'}</span><span class="stat-lbl">Días restantes</span></div>
+        <div class="stat"><span class="stat-val">Anual</span><span class="stat-lbl">Intervalo</span></div>
+      </div>
+      ${extra}
+    </div>
+  </div>`;
+}
+
+function renderHist(){
+  const h=D.history||[],el=document.getElementById('hist-list');
+  if(!h.length){el.innerHTML='<div class="muted-txt">Sin registros todavía.</div>';return;}
+  el.innerHTML=h.slice(0,10).map((e,i)=>{
+    const prev=h[i+1],diff=prev?e.km-prev.km:null;
+    return `<div class="hist-item">
+      <div><div class="hist-km">${fmt(e.km)} km</div><div class="hist-date">${e.fecha}</div></div>
+      <div><div class="hist-diff">${diff!==null?'+'+fmt(diff)+' km':'primer reg.'}</div>${e.nota?`<div class="hist-nota">${e.nota}</div>`:''}</div>
+    </div>`;
+  }).join('');
+}
+
 function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
 document.getElementById('km-input').addEventListener('keydown',e=>{if(e.key==='Enter')updateKm();});
 loadData();
